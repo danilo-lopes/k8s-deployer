@@ -1,0 +1,108 @@
+---
+- name: Getting Deployments
+  k8s_info:
+    kind: Deployment
+    kubeconfig: "{{ K8S_AUTH_KUBECONFIG }}"
+    label_selectors:
+    - "app = {{ APP_NAME }}"
+    namespace: "{{ NAMESPACE }}"
+  register: deployments
+
+- name: DEBUG
+  debug:
+    msg: "Quantity Of Deploys: {{ deployments.resources | length }}"
+
+- name: Stopping if Quantity of Deployments Match The Requirements
+  meta: end_play
+  when: deployments.resources | length > 2 or deployments.resources | length == 0
+
+- name: Getting Versions
+  set_fact:
+    versions: "{{ versions + [ item.metadata.labels.version ] }}"
+  with_items:
+    - "{{ deployments.resources }}"
+  loop_control:
+    label: "{{ item.metadata.labels.version }}"
+  vars:
+    versions: []
+
+- name: Adding Smaller Version to Remove After
+  set_fact:
+    version_to_remove: "{{ versions | min }}"
+
+- name: Adding Higher Version to Calculate in Canary Strategy
+  set_fact:
+    current_version: "{{ versions | max }}"
+
+- name: Stopping if New Deploy Version is Equal to The Existing One 
+  meta: end_play
+  when: APP_NEW_VERSION == current_version or APP_NEW_VERSION == version_to_remove
+
+- name: Calculating Deployments Replicas (1/2)
+  set_fact:
+    new_deployment_replicas: "{{ (calc | int ) if ( (calc | int ) > 0) else 1 }}"
+  vars:
+    calc: "{{ ( (REPLICA_COUNT | int ) * CANARY_PORCENTAGE / 100 ) | int }}"
+
+- name: Calculating Deployments Replicas (2/2)
+  set_fact:
+    old_deployment_replicas: "{{ (calc | int ) if ( (calc | int ) > 0) else 1 }}"
+  vars:
+    calc: "{{ ( REPLICA_COUNT | int ) - ( new_deployment_replicas | int ) }}"
+
+- name: Deploying New Deployment from Definition Tamplate File
+  kubernetes.core.k8s:
+    state: present
+    template: "{{ DEPLOYMENT_TEMPLATE_FILE }}"
+
+- name: Check if Deployment is Ready
+  k8s_info:
+    kind: Deployment
+    kubeconfig: "{{ K8S_AUTH_KUBECONFIG }}"
+    label_selectors:
+      - "app = {{ APP_NAME }}"
+      - "version = {{ APP_NEW_VERSION }}"
+    namespace: "{{ NAMESPACE }}"
+  register: new_deployment_status
+  until: new_deployment_status.resources[0].status.readyReplicas | default(0) >= 1
+  delay: "{{ DEPLOYMENT_DELAY_SECONDS_CHECK }}"
+  retries: "{{ DEPLOYMENT_RETRIES_CHECK }}"
+  ignore_errors: yes
+
+- name: Removing Failed Application
+  kubernetes.core.k8s:
+    state: absent
+    template: "{{ DEPLOYMENT_TEMPLATE_FILE }}"
+  when: new_deployment_status.failed |bool
+
+- name: Removing Smaller Version of Deployment
+  kubernetes.core.k8s:
+    state: absent
+    kind: Deployment
+    namespace: "{{ NAMESPACE }}"
+    label_selectors:
+      - "app = {{ APP_NAME }}"
+      - "version = {{ version_to_remove }}"
+  when: deployments.resources | length >= 2
+
+- name: Rebalacing Deployments Replicas (1/2)
+  kubernetes.core.k8s_scale:
+    api_version: v1
+    kind: Deployment
+    kubeconfig: "{{ K8S_AUTH_KUBECONFIG }}"
+    label_selectors:
+    - "app = {{ APP_NAME }}"
+    - "version = {{ current_version }}"
+    namespace: "{{ NAMESPACE }}"
+    replicas: "{{ old_deployment_replicas }}"
+
+- name: Rebalacing Deployments Replicas (2/2)
+  kubernetes.core.k8s_scale:
+    api_version: v1
+    kind: Deployment
+    kubeconfig: "{{ K8S_AUTH_KUBECONFIG }}"
+    label_selectors:
+    - "app = {{ APP_NAME }}"
+    - "version = {{ new_deployment_status.resources[0].metadata.labels.version }}"
+    namespace: "{{ NAMESPACE }}"
+    replicas: "{{ new_deployment_replicas }}"

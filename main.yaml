@@ -1,0 +1,71 @@
+---
+- name: Rollback Deploy
+  hosts: localhost
+  gather_facts: false
+  roles:
+  - {
+    role: assertion,
+      when: DEPLOY_TYPE == "rollback"
+  }
+  - {
+    role: rollback,
+      when: DEPLOY_TYPE == "rollback"
+  }
+  vars:
+    REMOVE_UNSERVICED_DEPLOYMENT: True
+
+- name: Simple Deploy
+  hosts: localhost
+  gather_facts: false
+  become: false
+  collections:
+   - kubernetes.core
+  roles:
+  - {
+    role: assertion,
+      when: DEPLOY_TYPE == "simple"
+  }
+  - {
+    role: simple,
+      when: DEPLOY_TYPE == "simple"
+  }
+
+- name: Blue Green Deploy
+  hosts: localhost
+  gather_facts: false
+  become: false
+  collections:
+   - kubernetes.core
+  roles:
+  - {
+    role: assertion,
+      when: DEPLOY_TYPE == "bluegreen"
+  }
+  - {
+    role: bluegreen,
+      when: DEPLOY_TYPE == "bluegreen"
+  }
+  vars:
+    REMOVE_UNSERVICED_DEPLOYMENT: True
+    DEPLOYMENT_DELAY_SECONDS_CHECK: 5
+    DEPLOYMENT_RETRIES_CHECK: 5
+
+- name: Canary Deploy
+  hosts: localhost
+  gather_facts: false
+  collections:
+   - kubernetes.core
+  roles:
+  - {
+    role: assertion,
+      when: DEPLOY_TYPE == "canary"
+  }
+  - {
+    role: canary,
+      when: DEPLOY_TYPE == "canary"
+  }
+  vars:
+    REPLICA_COUNT: 6
+    CANARY_PORCENTAGE: 50
+    DEPLOYMENT_DELAY_SECONDS_CHECK: 5
+    DEPLOYMENT_RETRIES_CHECK: 5

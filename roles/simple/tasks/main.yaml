@@ -1,0 +1,26 @@
+---
+- name: Deploying Deployment from Definition Tamplate File
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ K8S_AUTH_KUBECONFIG }}"
+    template: "{{ DEPLOYMENT_TEMPLATE_FILE }}"
+
+- name: Check if Deployment is Ready
+  k8s_info:
+    kind: Deployment
+    kubeconfig: "{{ K8S_AUTH_KUBECONFIG }}"
+    label_selectors:
+      - "app = {{ APP_NAME }}"
+      - "version = {{ APP_NEW_VERSION }}"
+    namespace: "{{ NAMESPACE }}"
+  register: new_deployment_status
+  until: new_deployment_status.resources[0].status.readyReplicas | default(0) >= 1
+  delay: 5
+  retries: 5
+  ignore_errors: yes
+
+- name: Removing Failed Application
+  kubernetes.core.k8s:
+    state: absent
+    template: "{{ DEPLOYMENT_TEMPLATE_FILE }}"
+  when: new_deployment_status.failed |bool

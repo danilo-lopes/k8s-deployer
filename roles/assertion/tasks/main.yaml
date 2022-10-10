@@ -1,0 +1,64 @@
+---
+- name: 'Check Mandatory Variables Are Defined for Blugreen'
+  assert:
+    that: "{{ item }} is defined"
+    quiet: yes
+    fail_msg: >
+      Variable "{{ item }}" must be defined - Failed
+    success_msg: "Passed"
+  with_items:
+    - K8S_AUTH_KUBECONFIG
+    - DEPLOY_TYPE
+    - APP_NAME
+    - APP_NEW_VERSION
+    - DEPLOYMENT_TEMPLATE_FILE
+    - NAMESPACE
+    - REMOVE_UNSERVICED_DEPLOYMENT
+  when: DEPLOY_TYPE == "bluegreen"
+
+- name: 'Check Mandatory Variables Are Defined for Canary'
+  assert:
+    that: "{{ item }} is defined"
+    quiet: yes
+    fail_msg: >
+      Variable "{{ item }}" must be defined - Failed
+    success_msg: "Passed"
+  with_items:
+    - K8S_AUTH_KUBECONFIG
+    - DEPLOY_TYPE
+    - APP_NAME
+    - APP_NEW_VERSION
+    - DEPLOYMENT_TEMPLATE_FILE
+    - NAMESPACE
+  when: DEPLOY_TYPE == "canary"
+
+- name: 'Check Mandatory Variables Are Defined for Rollback Deploy'
+  assert:
+    that: "{{ item }} is defined"
+    quiet: yes
+    fail_msg: >
+      Variable "{{ item }}" must be defined - Failed
+    success_msg: "Passed"
+  with_items:
+    - K8S_AUTH_KUBECONFIG
+    - DEPLOY_TYPE
+    - APP_NAME
+    - NAMESPACE
+    - REMOVE_UNSERVICED_DEPLOYMENT
+  when: DEPLOY_TYPE == "rollback"
+
+- name: 'Check Mandatory Variables Are Defined for Simple Deploy'
+  assert:
+    that: "{{ item }} is defined"
+    quiet: yes
+    fail_msg: >
+      Variable "{{ item }}" must be defined - Failed
+    success_msg: "Passed"
+  with_items:
+    - K8S_AUTH_KUBECONFIG
+    - DEPLOY_TYPE
+    - APP_NAME
+    - APP_NEW_VERSION
+    - DEPLOYMENT_TEMPLATE_FILE
+    - NAMESPACE
+  when: DEPLOY_TYPE == "simple"

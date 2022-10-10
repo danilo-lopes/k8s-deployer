@@ -1,0 +1,6 @@
+[localhost]
+127.0.0.1 ansible_connection=local
+
+[localhost:vars]
+DEPLOY_TYPE = bluegreen 
+K8S_AUTH_KUBECONFIG = /Users/<User>/.kube/config

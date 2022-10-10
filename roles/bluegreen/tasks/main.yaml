@@ -1,0 +1,94 @@
+---
+- name: Getting Deployments
+  k8s_info:
+    kind: Deployment
+    kubeconfig: "{{ K8S_AUTH_KUBECONFIG }}"
+    label_selectors:
+    - "app = {{ APP_NAME }}"
+    namespace: "{{ NAMESPACE }}"
+  register: deployments
+
+- name: Getting Versions
+  set_fact:
+    versions: "{{ versions + [ item.metadata.labels.version ] }}"
+  with_items:
+    - "{{ deployments.resources }}"
+  loop_control:
+    label: "{{ item.metadata.labels.version }}"
+  vars:
+    versions: []
+
+- name: Adding Smaller Version
+  set_fact:
+    smaller_version: "{{ versions | min }}"
+
+- name: Deploying Deployment from Definition Tamplate File
+  kubernetes.core.k8s:
+    state: present
+    template: "{{ DEPLOYMENT_TEMPLATE_FILE }}"
+
+- name: Check if Deployment is Ready
+  k8s_info:
+    kind: Deployment
+    kubeconfig: "{{ K8S_AUTH_KUBECONFIG }}"
+    label_selectors:
+      - "app = {{ APP_NAME }}"
+      - "version = {{ APP_NEW_VERSION }}"
+    namespace: "{{ NAMESPACE }}"
+  register: deployment_status
+  until: deployment_status.resources[0].status.readyReplicas | default(0) >= 1
+  delay: "{{ DEPLOYMENT_DELAY_SECONDS_CHECK }}"
+  retries: "{{ DEPLOYMENT_RETRIES_CHECK }}"
+  ignore_errors: yes
+
+- name: Removing Failed Application
+  kubernetes.core.k8s:
+    state: absent
+    template: "{{ DEPLOYMENT_TEMPLATE_FILE }}"
+  when: deployment_status.failed
+
+- name: Changing Kubernetes Service to New Version
+  kubernetes.core.k8s:
+    state: patched
+    kind: Service
+    name: "{{ APP_NAME }}"
+    namespace: "{{ NAMESPACE }}"
+    definition:
+      spec:
+        selector:
+          version: "{{ APP_NEW_VERSION }}"
+  when: not deployment_status.failed |bool
+
+- name: Getting Deployments
+  k8s_info:
+    kind: Deployment
+    kubeconfig: "{{ K8S_AUTH_KUBECONFIG }}"
+    label_selectors:
+    - "app = {{ APP_NAME }}"
+    namespace: "{{ NAMESPACE }}"
+  register: deployments
+
+- name: Removing Last Version of Deployment
+  kubernetes.core.k8s:
+    state: absent
+    kind: Deployment
+    namespace: "{{ NAMESPACE }}"
+    label_selectors:
+      - "app = {{ APP_NAME }}"
+      - "version = {{ smaller_version }}"
+  when: (REMOVE_UNSERVICED_DEPLOYMENT |bool) or
+        (deployments.resources | length >= 3)
+
+- name: Getting Versions
+  set_fact:
+    new_versions: "{{ new_versions + [ item.metadata.labels.version ] }}"
+  with_items:
+    - "{{ deployments.resources }}"
+  loop_control:
+    label: "{{ item.metadata.labels.version }}"
+  vars:
+    new_versions: []
+
+- name: Current Versions
+  debug:
+    msg: "{{ versions }}"

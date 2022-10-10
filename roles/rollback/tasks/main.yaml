@@ -1,0 +1,48 @@
+---
+- name: Getting Deployments
+  k8s_info:
+    kind: Deployment
+    kubeconfig: "{{ K8S_AUTH_KUBECONFIG }}"
+    label_selectors:
+    - "app = {{ APP_NAME }}"
+    namespace: "{{ NAMESPACE }}"
+  register: deployments
+
+- name: Getting Versions
+  set_fact:
+    versions: "{{ versions + [ item.metadata.labels.version ] }}"
+  with_items:
+    - "{{ deployments.resources }}"
+  loop_control:
+    label: "{{ item.metadata.labels.version }}"
+  vars:
+    versions: []
+
+- name: Adding Smaller Version
+  set_fact:
+    smaller_version: "{{ versions | min }}"
+
+- name: Adding Higher Version
+  set_fact:
+    current_version: "{{ versions | max }}"
+
+- name: Fallback Kubernetes Service to Old Version
+  kubernetes.core.k8s:
+    state: patched
+    kind: Service
+    name: "{{ APP_NAME }}"
+    namespace: "{{ NAMESPACE }}"
+    definition:
+      spec:
+        selector:
+          version: "{{ smaller_version }}"
+
+- name: Removing Last Version of Deployment
+  kubernetes.core.k8s:
+    state: absent
+    kind: Deployment
+    namespace: "{{ NAMESPACE }}"
+    label_selectors:
+      - "app = {{ APP_NAME }}"
+      - "version = {{ current_version }}"
+  when: REMOVE_UNSERVICED_DEPLOYMENT |bool
